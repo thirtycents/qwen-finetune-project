@@ -2,7 +2,7 @@
 set -e
 
 ENV_NAME="qwen-fc"
-PYTHON_VERSION="3.10"
+PYTHON_VERSION="3.11"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "============================================"
@@ -42,11 +42,11 @@ if python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cu
 import torch
 if torch.cuda.is_available():
     print(f'    GPU: {torch.cuda.get_device_name(0)}')
-    print(f'    显存: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB')
+    print(f'    显存: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB')
 "
 else
-    echo "[*] 安装 PyTorch CUDA 12.4..."
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+    echo "[*] 安装 PyTorch Nightly (CUDA 12.8+ for Blackwell/RTX 50-series)..."
+    pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 fi
 
 echo ""
@@ -57,6 +57,7 @@ if [ -d "LLaMA-Factory" ]; then
 fi
 git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git
 cd LLaMA-Factory
+pip install hatchling editables
 pip install -e ".[torch,metrics]" --no-build-isolation
 echo "[✓] LLaMA-Factory 安装完成"
 

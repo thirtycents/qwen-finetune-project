@@ -31,7 +31,6 @@
     "formatting": "sharegpt",
     "columns": {
       "messages": "conversations",
-      "system": "system",
       "tools": "tools"
     },
     "tags": {
@@ -39,6 +38,7 @@
       "content_tag": "value",
       "user_tag": "human",
       "assistant_tag": "gpt",
+      "system_tag": "system",
       "function_tag": "function_call",
       "observation_tag": "observation"
     }
@@ -49,7 +49,6 @@
     "formatting": "sharegpt",
     "columns": {
       "messages": "conversations",
-      "system": "system",
       "tools": "tools"
     },
     "tags": {
@@ -57,6 +56,7 @@
       "content_tag": "value",
       "user_tag": "human",
       "assistant_tag": "gpt",
+      "system_tag": "system",
       "function_tag": "function_call",
       "observation_tag": "observation"
     }

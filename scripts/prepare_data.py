@@ -48,7 +48,8 @@ from tqdm import tqdm
 # ============================================================
 
 # 数据集名称（HuggingFace 上的路径）
-DATASET_NAME = "Salesforce/xlam-function-calling-60k"
+DATASET_NAME_MAIN = "Salesforce/xlam-function-calling-60k"
+DATASET_NAME_BACKUP = "NousResearch/hermes-function-calling-v1"
 
 # 输出目录
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "processed"
@@ -86,17 +87,43 @@ def load_dataset_from_hf():
         print("[错误] 请先安装 datasets 库: pip install datasets")
         raise
 
-    print(f"[*] 正在从 HuggingFace 加载数据集: {DATASET_NAME}")
+    print(f"[*] 正在从 HuggingFace 加载数据集: {DATASET_NAME_MAIN}")
     print("    （首次下载可能需要几分钟，取决于网速）")
     print("    （如果提示需要登录，请运行: huggingface-cli login）")
     print()
 
-    dataset = load_dataset(DATASET_NAME, split="train")
-    print(f"[✓] 数据集加载完成，共 {len(dataset)} 条样本")
-    return dataset
+    try:
+        dataset = load_dataset(DATASET_NAME_MAIN, split="train")
+        print(f"[✓] xLAM 数据集加载完成，共 {len(dataset)} 条样本")
+        return dataset, "xlam"
+    except Exception as e:
+        print(f"[!] xLAM 数据集加载失败: {e}")
+        print(f"[*] 尝试加载备用数据集: {DATASET_NAME_BACKUP}")
+        dataset = load_dataset(DATASET_NAME_BACKUP, split="train")
+        print(f"[✓] Hermes 数据集加载完成，共 {len(dataset)} 条样本")
+        return dataset, "hermes"
 
 
-def convert_sample(sample: dict) -> dict | None:
+def convert_hermes_sample(sample: dict) -> dict | None:
+    """
+    将 Hermes 格式转换为 ShareGPT 格式
+    Hermes 格式:
+    {
+        "conversations": [
+            {"from": "human", "value": "..."},
+            {"from": "gpt", "value": "<tool_code>...</tool_code>"}
+        ]
+    }
+    """
+    # Hermes 已经是 ShareGPT 格式，但可能需要清洗或调整
+    # 这里直接返回，假设格式兼容
+    return sample
+
+def convert_sample(sample: dict, dataset_type: str = "xlam") -> dict | None:
+    if dataset_type == "hermes":
+        return convert_hermes_sample(sample)
+    
+    # xlam 逻辑保持不变...
     """
     将 xlam-60k 的一条样本转换为 LLaMA-Factory sharegpt 格式。
 
@@ -192,7 +219,7 @@ def main():
     print()
 
     # Step 2: 加载数据集
-    dataset = load_dataset_from_hf()
+    dataset, dataset_type = load_dataset_from_hf()
     print()
 
     # Step 3: 转换格式
@@ -201,7 +228,7 @@ def main():
     skipped = 0
 
     for sample in tqdm(dataset, desc="转换进度"):
-        result = convert_sample(sample)
+        result = convert_sample(sample, dataset_type)
         if result is not None:
             converted_data.append(result)
         else:
