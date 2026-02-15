@@ -1,0 +1,103 @@
+# ============================================================================
+# Dockerfile.inference — vLLM 推理服务 Docker 镜像
+# ============================================================================
+#
+# 什么是 Docker？
+# Docker 是一个容器化工具，可以把应用和所有依赖打包成一个「镜像」。
+# 就像一个独立的小型虚拟机，但比虚拟机更轻量。
+# 好处：在任何机器上运行都是相同的环境，避免"在我电脑上能跑"的问题。
+#
+# 什么是 vLLM？
+# vLLM 是一个高性能的大语言模型推理引擎，特点：
+# - PagedAttention：像操作系统管理内存一样管理 KV Cache，显存利用率更高
+# - Continuous Batching：动态合批，吞吐量比传统方法高 2~24 倍
+# - OpenAI 兼容 API：可以用 OpenAI 的 SDK 直接调用
+#
+# 构建方法：
+#   docker build -t qwen3-fc-inference -f deploy/docker/Dockerfile.inference .
+#
+# 运行方法：
+#   docker run --gpus all -p 8000:8000 qwen3-fc-inference
+# ============================================================================
+
+# ---- 基础镜像 ----
+# 使用 vLLM 官方提供的 OpenAI 兼容服务器镜像
+# 这个镜像已经包含了：
+# - CUDA 运行时（GPU 驱动的用户态库）
+# - PyTorch
+# - vLLM 引擎
+# - OpenAI 兼容的 API 服务器
+FROM vllm/vllm-openai:latest
+
+# ---- 镜像元信息 ----
+# LABEL 是镜像的元数据，类似于商品的标签
+LABEL maintainer="Qwen-FC-Project"
+LABEL description="Qwen3-0.6B Function Calling inference server powered by vLLM"
+LABEL version="1.0"
+
+# ---- 设置工作目录 ----
+# WORKDIR 相当于 cd 到指定目录，后续命令都在这个目录下执行
+WORKDIR /app
+
+# ---- 复制模型文件 ----
+# 将合并后的模型复制到镜像中
+# 注意：如果模型很大，也可以在运行时通过卷挂载（-v）的方式加载
+# COPY <宿主机路径> <镜像内路径>
+COPY outputs/qwen3-0.6b-fc-merged /app/model
+
+# ---- 环境变量 ----
+# ENV 设置环境变量，在容器运行时可以被读取
+
+# 模型路径：vLLM 服务器会加载这个路径下的模型
+ENV MODEL_PATH=/app/model
+
+# vLLM 服务器监听端口
+ENV PORT=8000
+
+# GPU 显存利用率上限（0.0 ~ 1.0）
+# 0.90 表示最多使用 90% 的 GPU 显存，留 10% 给系统
+# 如果出现 OOM（显存不足），可以降低这个值
+ENV GPU_MEMORY_UTILIZATION=0.90
+
+# 最大模型长度（最大支持的上下文长度）
+# Qwen3-0.6B 支持最长 32768 tokens，但我们限制到 4096 以节省显存
+ENV MAX_MODEL_LEN=4096
+
+# ---- 健康检查 ----
+# HEALTHCHECK 告诉 Docker 如何判断容器是否"健康"
+# --interval=30s : 每 30 秒检查一次
+# --timeout=10s  : 每次检查最多等待 10 秒
+# --retries=3    : 连续 3 次失败才标记为不健康
+# curl 请求 vLLM 的 /health 端点，返回 200 表示正常
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# ---- 暴露端口 ----
+# EXPOSE 声明容器会使用哪个端口（这只是文档作用，不会自动映射）
+# 实际映射需要在 docker run 时用 -p 参数指定
+EXPOSE ${PORT}
+
+# ---- 启动命令 ----
+# ENTRYPOINT 定义容器启动时执行的命令
+# 这里启动 vLLM 的 OpenAI 兼容 API 服务器
+#
+# 参数说明：
+#   --model          : 模型路径
+#   --port           : 服务端口
+#   --host 0.0.0.0   : 监听所有网络接口（不只是 localhost）
+#                      这样容器外部才能访问
+#   --gpu-memory-utilization : GPU 显存使用比例
+#   --max-model-len  : 最大上下文长度
+#   --trust-remote-code : 允许执行模型的自定义代码（Qwen 需要）
+#   --dtype bfloat16 : 使用 BF16 精度推理
+#   --enforce-eager  : 禁用 CUDA Graph（兼容性更好，但速度略慢）
+#                      如果 GPU 支持 CUDA Graph，可以去掉此参数以获得更好性能
+ENTRYPOINT ["python", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--model", "/app/model", \
+     "--port", "8000", \
+     "--host", "0.0.0.0", \
+     "--gpu-memory-utilization", "0.90", \
+     "--max-model-len", "4096", \
+     "--trust-remote-code", \
+     "--dtype", "bfloat16", \
+     "--enforce-eager"]

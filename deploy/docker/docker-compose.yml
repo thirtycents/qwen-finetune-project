@@ -1,0 +1,177 @@
+# ============================================================================
+# docker-compose.yml — 一键启动完整推理服务栈
+# ============================================================================
+#
+# 什么是 Docker Compose？
+# Docker Compose 是管理多个 Docker 容器的工具。
+# 一个完整的服务通常需要多个组件（模型服务、监控、数据库等），
+# Docker Compose 让你用一个配置文件定义所有组件，然后一键启动。
+#
+# 本配置包含 3 个服务：
+# 1. vllm-server    : vLLM 推理服务器（核心，处理模型推理请求）
+# 2. prometheus     : 监控数据采集（收集性能指标）
+# 3. grafana        : 监控可视化面板（展示图表和仪表盘）
+#
+# 启动方法：
+#   docker compose up -d          # 后台启动所有服务
+#   docker compose up             # 前台启动（可以看到日志）
+#   docker compose down           # 停止所有服务
+#   docker compose logs -f vllm   # 查看 vllm 服务的日志
+#
+# 访问地址：
+#   vLLM API    : http://localhost:8000
+#   Prometheus  : http://localhost:9090
+#   Grafana     : http://localhost:3000 (默认用户名/密码: admin/admin)
+# ============================================================================
+
+# Docker Compose 配置文件版本
+# version 字段在最新版 Docker Compose 中已经是可选的
+
+# ---- 服务定义 ----
+services:
+
+  # ==========================
+  # 服务 1: vLLM 推理服务器
+  # ==========================
+  vllm-server:
+    # 使用我们自己构建的镜像
+    # 如果还没构建，先运行：
+    #   docker build -t qwen3-fc-inference -f deploy/docker/Dockerfile.inference .
+    image: qwen3-fc-inference:latest
+
+    # 容器名称（方便识别和管理）
+    container_name: qwen3-fc-vllm
+
+    # GPU 配置
+    # deploy.resources.reservations.devices 告诉 Docker 为容器分配 GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia           # 使用 NVIDIA GPU 驱动
+              count: 1                 # 分配 1 块 GPU
+              capabilities: [gpu]      # 需要 GPU 计算能力
+
+    # 端口映射
+    # 格式: "宿主机端口:容器内端口"
+    # 将容器内的 8000 端口映射到宿主机的 8000 端口
+    ports:
+      - "8000:8000"
+
+    # 环境变量（覆盖 Dockerfile 中的默认值）
+    environment:
+      - GPU_MEMORY_UTILIZATION=0.90
+      - MAX_MODEL_LEN=4096
+      # NVIDIA 驱动相关环境变量
+      - NVIDIA_VISIBLE_DEVICES=all        # 让容器看到所有 GPU
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility  # GPU 能力范围
+
+    # 卷挂载（可选：使用宿主机上的模型目录，而不是打包进镜像）
+    # 如果模型已经在镜像中了，可以注释掉这两行
+    # volumes:
+    #   - ./outputs/qwen3-0.6b-fc-merged:/app/model:ro  # :ro 表示只读
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s    # 每 30 秒检查一次
+      timeout: 10s     # 超时时间
+      retries: 5       # 最多重试 5 次
+      start_period: 60s  # 启动后等待 60 秒再开始检查（模型加载需要时间）
+
+    # 重启策略
+    # unless-stopped: 除非手动停止，否则容器退出后自动重启
+    restart: unless-stopped
+
+    # 网络
+    networks:
+      - monitoring
+
+  # ==========================
+  # 服务 2: Prometheus 监控采集
+  # ==========================
+  # Prometheus 是什么？
+  # Prometheus 是一个开源的监控系统，它会定期「拉取」各个服务的指标数据。
+  # 比如 vLLM 会在 /metrics 端点暴露性能数据（请求数、延迟、显存使用等），
+  # Prometheus 每隔几秒去读取一次，然后存储起来。
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: qwen3-fc-prometheus
+
+    ports:
+      - "9090:9090"  # Prometheus Web UI
+
+    # 挂载配置文件
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus  # 持久化存储监控数据
+
+    # 启动命令参数
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"                      # 数据存储路径
+      - "--storage.tsdb.retention.time=7d"                     # 数据保留 7 天
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+
+    # 依赖关系：等 vllm-server 启动后再启动 Prometheus
+    depends_on:
+      vllm-server:
+        condition: service_healthy  # 等 vLLM 健康检查通过
+
+    restart: unless-stopped
+
+    networks:
+      - monitoring
+
+  # ==========================
+  # 服务 3: Grafana 监控面板
+  # ==========================
+  # Grafana 是什么？
+  # Grafana 是一个可视化工具，可以把 Prometheus 收集的数据展示为图表。
+  # 我们可以创建仪表盘来实时监控模型的性能：
+  # - 每秒处理多少请求
+  # - 平均响应时间
+  # - GPU 显存使用率
+  # - 等等
+  grafana:
+    image: grafana/grafana:latest
+    container_name: qwen3-fc-grafana
+
+    ports:
+      - "3000:3000"  # Grafana Web UI
+
+    environment:
+      # 默认管理员密码（生产环境请修改！）
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # 允许匿名访问（开发环境方便查看，生产环境建议关闭）
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+
+    volumes:
+      # 持久化 Grafana 数据（仪表盘配置等）
+      - grafana-data:/var/lib/grafana
+      # 自动配置数据源和仪表盘
+      - ./deploy/monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/vllm.json:ro
+
+    depends_on:
+      - prometheus
+
+    restart: unless-stopped
+
+    networks:
+      - monitoring
+
+# ---- 网络定义 ----
+# 自定义网络让容器之间可以用服务名互相访问
+# 例如 Prometheus 可以用 http://vllm-server:8000/metrics 访问 vLLM
+networks:
+  monitoring:
+    driver: bridge  # 桥接网络，最常用的类型
+
+# ---- 卷定义 ----
+# 命名卷(named volumes)用于持久化数据
+# 即使容器被删除重建，数据也不会丢失
+volumes:
+  prometheus-data:  # Prometheus 时序数据库
+  grafana-data:     # Grafana 仪表盘配置

@@ -1,0 +1,134 @@
+# ============================================================================
+# values.yaml — Helm Chart 的默认配置值
+# ============================================================================
+#
+# 什么是 values.yaml？
+# Helm Chart 通过「模板 + 变量」的方式生成最终的 Kubernetes 配置。
+# values.yaml 定义了所有变量的默认值。
+# 安装时可以通过 --set 或 -f 参数覆盖这些值：
+#
+#   helm install qwen3-fc ./deploy/helm                          # 使用默认值
+#   helm install qwen3-fc ./deploy/helm --set replicas=2         # 覆盖副本数
+#   helm install qwen3-fc ./deploy/helm -f my-values.yaml        # 使用自定义配置文件
+# ============================================================================
+
+# ---- 镜像配置 ----
+image:
+  # Docker 镜像仓库地址
+  # 本地开发时用本地镜像名，生产环境用 Docker Hub 或私有仓库
+  repository: qwen3-fc-inference
+  # 镜像标签（版本）
+  tag: latest
+  # 镜像拉取策略
+  # Always: 每次都拉取（适合开发环境）
+  # IfNotPresent: 本地有就不拉取（适合生产环境）
+  # Never: 永不拉取（只用本地镜像）
+  pullPolicy: IfNotPresent
+
+# ---- 副本数 ----
+# 运行几个模型推理 Pod（Pod 是 K8s 最小调度单位，类似于一个容器）
+# 单 GPU 环境设置为 1
+# 如果有多块 GPU，可以设置更多副本来提高吞吐量
+replicas: 1
+
+# ---- 模型配置 ----
+model:
+  # 模型在容器内的路径
+  path: /app/model
+  # 最大上下文长度
+  maxModelLen: 4096
+  # GPU 显存利用率
+  gpuMemoryUtilization: "0.90"
+  # 模型精度
+  dtype: bfloat16
+  # 是否信任远程代码
+  trustRemoteCode: true
+
+# ---- 服务配置 ----
+service:
+  # 服务类型
+  # ClusterIP: 只在集群内部可访问（默认，最安全）
+  # NodePort: 在每个节点的指定端口暴露（开发环境常用）
+  # LoadBalancer: 通过云提供商的负载均衡器暴露（生产环境常用）
+  type: ClusterIP
+  # 服务端口
+  port: 8000
+  # 容器端口
+  targetPort: 8000
+
+# ---- 资源限制 ----
+# Kubernetes 通过 resources 控制 Pod 可以使用的计算资源
+resources:
+  # requests: Pod 启动时需要的最少资源（调度器根据这个分配节点）
+  requests:
+    cpu: "2"               # 至少需要 2 个 CPU 核心
+    memory: "8Gi"          # 至少需要 8GB 内存
+    nvidia.com/gpu: "1"    # 至少需要 1 块 NVIDIA GPU
+  # limits: Pod 可以使用的最大资源（超过会被限制或杀掉）
+  limits:
+    cpu: "4"               # 最多使用 4 个 CPU 核心
+    memory: "12Gi"         # 最多使用 12GB 内存
+    nvidia.com/gpu: "1"    # 最多使用 1 块 GPU
+
+# ---- GPU 运行时 ----
+# runtimeClassName 告诉 K8s 使用 NVIDIA 容器运行时
+# 需要在集群中安装 NVIDIA GPU Operator
+runtimeClassName: nvidia
+
+# ---- 健康检查配置 ----
+# 健康检查让 K8s 知道 Pod 是否正常工作
+healthcheck:
+  # livenessProbe: 存活检查
+  # 如果失败 → K8s 会重启 Pod（认为它挂了）
+  liveness:
+    path: /health
+    initialDelaySeconds: 120   # 启动后等 120 秒再检查（模型加载需要时间）
+    periodSeconds: 30          # 每 30 秒检查一次
+    timeoutSeconds: 10         # 每次检查超时时间
+    failureThreshold: 3        # 连续 3 次失败才重启
+
+  # readinessProbe: 就绪检查
+  # 如果失败 → K8s 不会把流量发给这个 Pod（但不会重启）
+  readiness:
+    path: /health
+    initialDelaySeconds: 60    # 启动后等 60 秒再检查
+    periodSeconds: 15          # 每 15 秒检查一次
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# ---- 自动扩缩容 (HPA) ----
+# HPA (Horizontal Pod Autoscaler) 根据负载自动调整 Pod 数量
+# 注意：需要集群安装了 metrics-server
+autoscaling:
+  enabled: false              # 默认关闭（单 GPU 环境不需要）
+  minReplicas: 1
+  maxReplicas: 4
+  # 目标 CPU 利用率：当 CPU 使用率超过 80% 时自动扩容
+  targetCPUUtilizationPercentage: 80
+
+# ---- 监控配置 ----
+monitoring:
+  # 是否启用 Prometheus 监控
+  enabled: true
+  # ServiceMonitor: Prometheus Operator 的自定义资源
+  # 告诉 Prometheus 去哪个端点抓取指标
+  serviceMonitor:
+    enabled: false    # 需要集群安装了 Prometheus Operator
+    interval: 15s     # 抓取间隔
+    path: /metrics    # 指标端点路径
+
+# ---- 容忍度和亲和性 ----
+# 这些是 K8s 的调度策略，控制 Pod 被部署到哪个节点
+
+# tolerations: 容忍度
+# 如果 GPU 节点被打了 taint（污点），Pod 需要有对应的 toleration 才能调度上去
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# nodeSelector: 节点选择器
+# 指定 Pod 只能部署到有 GPU 的节点上
+nodeSelector: {}
+  # 如果节点有 gpu=true 的标签，取消注释：
+  # gpu: "true"

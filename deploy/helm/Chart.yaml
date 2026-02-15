@@ -1,0 +1,54 @@
+# ============================================================================
+# Chart.yaml — Helm Chart 的元数据文件
+# ============================================================================
+#
+# 什么是 Helm？
+# Helm 是 Kubernetes 的「包管理器」，类似于：
+#   - Python 的 pip
+#   - Node.js 的 npm
+#   - Ubuntu 的 apt
+#
+# 它把 Kubernetes 的 YAML 配置文件打包成一个 "Chart"（图表/包），
+# 让你可以一条命令部署复杂的应用。
+#
+# Chart.yaml 相当于 npm 的 package.json，描述这个包的基本信息。
+# ============================================================================
+
+# API 版本（v2 是 Helm 3 使用的版本）
+apiVersion: v2
+
+# Chart 名称
+name: qwen3-fc
+
+# Chart 描述
+description: Qwen3-0.6B Function Calling inference service powered by vLLM
+
+# Chart 类型
+# application: 可部署的应用
+# library: 可复用的工具库（不能独立部署）
+type: application
+
+# Chart 版本（遵循语义化版本规范 SemVer）
+# 格式: 主版本.次版本.修订号
+# 主版本: 不兼容的 API 变更
+# 次版本: 向下兼容的新功能
+# 修订号: 向下兼容的 bug 修复
+version: 0.1.0
+
+# 应用版本（我们部署的模型/应用的版本）
+appVersion: "1.0.0"
+
+# 关键词（方便在 Helm Hub 搜索）
+keywords:
+  - llm
+  - inference
+  - vllm
+  - qwen
+  - function-calling
+
+# 维护者
+maintainers:
+  - name: Qwen-FC-Project
+
+# 项目主页
+home: https://github.com/your-name/qwen-0.6-ft

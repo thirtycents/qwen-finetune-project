@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "============================================================",
+    "dataset_info.json - LLaMA-Factory 数据集注册表",
+    "============================================================",
+    "作用：告诉 LLaMA-Factory 去哪里找数据、数据是什么格式。",
+    "",
+    "LLaMA-Factory 支持多种数据格式，我们使用 'sharegpt' 格式：",
+    "  - sharegpt 格式模拟多轮对话，每条数据是一个 conversations 数组",
+    "  - 每个 conversation 有 from（角色）和 value（内容）两个字段",
+    "",
+    "角色说明（tags 配置）：",
+    "  - human: 用户说的话",
+    "  - gpt: 模型的最终回复",
+    "  - function_call: 模型决定调用某个函数（JSON 格式的工具调用）",
+    "  - observation: 函数执行后的返回结果",
+    "",
+    "columns 配置说明：",
+    "  - messages -> conversations: 对话内容存储在 conversations 字段中",
+    "  - system -> system: 系统提示词存储在 system 字段中",
+    "  - tools -> tools: 可用工具列表存储在 tools 字段中",
+    "",
+    "注意：file_name 是相对于 dataset_dir 的路径。",
+    "在训练配置中我们设置 dataset_dir: ./configs，",
+    "所以 '../data/processed/train.json' 就是 项目根目录/data/processed/train.json",
+    "============================================================"
+  ],
+
+  "xlam_fc_train": {
+    "file_name": "../data/processed/train.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "system": "system",
+      "tools": "tools"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "human",
+      "assistant_tag": "gpt",
+      "function_tag": "function_call",
+      "observation_tag": "observation"
+    }
+  },
+
+  "xlam_fc_val": {
+    "file_name": "../data/processed/val.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "system": "system",
+      "tools": "tools"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "human",
+      "assistant_tag": "gpt",
+      "function_tag": "function_call",
+      "observation_tag": "observation"
+    }
+  }
+}

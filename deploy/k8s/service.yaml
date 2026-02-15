@@ -1,0 +1,68 @@
+# ============================================================================
+# service.yaml — Kubernetes Service 配置
+# ============================================================================
+#
+# 什么是 Service？
+# Service 是 Kubernetes 中的「网络抽象层」。
+#
+# 问题：Pod 的 IP 地址是动态的（Pod 重启后 IP 会变），
+# 其他服务如何稳定地找到它？
+#
+# 解决：Service 提供一个固定的访问入口（虚拟 IP + DNS 名称），
+# 自动将流量转发到后面的 Pod。
+#
+# 类比：Service 就像一个接待前台，不管后面的员工（Pod）怎么换，
+# 客户（其他服务）只需要找前台就行。
+#
+# Service 类型：
+#   ClusterIP    : 只在集群内部可访问（默认，最安全）
+#   NodePort     : 在每个节点的指定端口暴露（开发测试常用）
+#   LoadBalancer : 通过云负载均衡器暴露（生产环境常用）
+#
+# 使用方法：
+#   kubectl apply -f deploy/k8s/service.yaml
+#   kubectl get svc
+# ============================================================================
+
+apiVersion: v1           # Service 的 API 版本
+kind: Service             # 资源类型：Service
+
+metadata:
+  name: qwen3-fc-service
+  namespace: default
+  labels:
+    app: qwen3-fc
+    component: inference
+
+spec:
+  # 服务类型：ClusterIP（集群内部访问）
+  # 如果需要外部访问，改为 NodePort 或 LoadBalancer
+  type: ClusterIP
+
+  # 选择器：这个 Service 把流量转发给哪些 Pod
+  # 必须与 Deployment 中 Pod 的标签匹配
+  selector:
+    app: qwen3-fc
+    component: inference
+
+  # 端口配置
+  ports:
+    # API 端口（OpenAI 兼容接口）
+    - name: http-api
+      protocol: TCP
+      port: 8000          # Service 监听的端口（其他服务访问时用这个端口）
+      targetPort: 8000    # 转发到 Pod 的哪个端口
+      # 如果 type=NodePort，可以指定 nodePort: 30800
+
+    # 指标端口（Prometheus 监控用）
+    # vLLM 的 /metrics 端点和 API 在同一个端口
+    - name: metrics
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+
+  # 会话亲和性
+  # None: 默认，每次请求可能被发到不同的 Pod
+  # ClientIP: 同一个客户端 IP 的请求总是发到同一个 Pod（适合有状态服务）
+  # 对于推理服务，None 即可（无状态）
+  sessionAffinity: None

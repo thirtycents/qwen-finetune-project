@@ -1,0 +1,152 @@
+# ============================================================================
+# GRPO (Group Relative Policy Optimization) 训练配置
+# ============================================================================
+#
+# 什么是 GRPO？
+# GRPO 是在 SFT（监督微调）之后的强化学习对齐阶段。
+# SFT 让模型学会了 "如何输出函数调用"，
+# GRPO 让模型学会了 "如何输出更好的函数调用"。
+#
+# GRPO vs PPO（传统 RLHF）：
+#   PPO  需要训练一个奖励模型 → 显存翻倍 → 不适合小显存
+#   GRPO 用规则奖励函数 → 不需要额外模型 → 适合 12GB 显存 GPU
+#
+# 训练流程：
+#   1. 对同一个输入，模型生成 G 个候选回答
+#   2. 用奖励函数对每个回答打分
+#   3. 组内归一化得到相对优势
+#   4. 用优势值更新模型策略
+#
+# 使用方法：
+#   llamafactory-cli train configs/qwen3_grpo.yaml
+#
+# 前置条件：
+#   1. 已完成 SFT 训练（configs/qwen3_lora_sft.yaml）
+#   2. 已合并 LoRA 权重（scripts/merge_lora.py）
+#   3. 合并后的模型在 outputs/qwen3-0.6b-fc-merged
+# ============================================================================
+
+# ========== 第一部分：模型配置 ==========
+
+# 模型名称或路径
+# 注意：GRPO 使用 SFT 后合并的模型作为起点，不是原始基座模型
+# 因为 GRPO 是在 SFT 的基础上进一步优化
+model_name_or_path: outputs/qwen3-0.6b-fc-merged
+
+# 训练阶段：grpo = Group Relative Policy Optimization
+# LLaMA-Factory 支持的阶段：pt(预训练), sft(微调), rm(奖励模型), grpo(GRPO对齐)
+stage: grpo
+
+# 模型模板：必须与 SFT 阶段使用的模板一致
+template: qwen3
+
+# ========== 第二部分：LoRA 配置 ==========
+# GRPO 阶段也使用 LoRA，避免全量更新导致灾难性遗忘
+# 灾难性遗忘：模型在学习新任务时忘记了之前学过的内容
+
+# 微调方法：lora
+finetuning_type: lora
+
+# LoRA 超参数（与 SFT 阶段保持一致）
+lora_rank: 32             # LoRA 矩阵的秩
+lora_alpha: 64            # LoRA 缩放因子
+lora_dropout: 0.05        # LoRA Dropout
+lora_target: all          # 对所有线性层应用 LoRA
+
+# ========== 第三部分：数据集配置 ==========
+
+# 使用与 SFT 相同的训练数据
+# GRPO 会用这些数据的 prompt 部分生成候选回答
+dataset: fc_train
+dataset_dir: data/processed
+
+# 数据预处理
+preprocessing_num_workers: 4   # 数据预处理的并行进程数
+max_samples: 10000             # 最多使用多少条数据（GRPO 不需要太多数据）
+
+# ========== 第四部分：GRPO 专有配置 ==========
+
+# 奖励模型路径
+# 在 GRPO 中，这里指向奖励函数脚本，而不是传统的奖励模型
+# LLaMA-Factory 会调用这个脚本中的奖励函数来计算分数
+reward_model: scripts/grpo_reward.py
+
+# 每个 prompt 生成的候选回答数量（Group Size）
+# 数量越多 → 排序越准确 → 但显存和时间开销越大
+# 推荐值：4~8，12GB 显存 GPU 用 4 比较安全
+num_generations: 4
+
+# 候选回答的最大长度
+max_new_tokens: 256
+
+# 生成温度：控制随机性
+# 温度越高 → 生成的候选越多样 → 有助于探索更多策略
+# 但太高会生成垃圾 → 0.7~0.9 是常用范围
+temperature: 0.8
+
+# Top-p 采样（核采样）
+# 只从累积概率前 p 的 token 中采样
+# 例如 top_p=0.95: 只考虑概率最高的、累积概率达到 95% 的 token
+top_p: 0.95
+
+# ========== 第五部分：训练超参数 ==========
+
+# 输出目录
+output_dir: outputs/qwen3-0.6b-fc-grpo
+
+# 训练轮数（GRPO 通常只需要 1~3 轮）
+# 太多轮容易过拟合，因为奖励函数是固定规则，不够复杂
+num_train_epochs: 2
+
+# 批次大小
+per_device_train_batch_size: 1    # GRPO 显存消耗大（要同时存 G 个候选回答），用小 batch
+gradient_accumulation_steps: 16   # 梯度累积补偿小 batch（等效 batch_size = 1 × 16 = 16）
+
+# 学习率
+# GRPO 阶段用比 SFT 更小的学习率，避免模型变化太大
+# SFT 学习率 2e-4，GRPO 用 5e-6（小 40 倍）
+learning_rate: 5.0e-6
+
+# 学习率调度器
+lr_scheduler_type: cosine
+
+# 预热步数比例
+warmup_ratio: 0.1
+
+# ========== 第六部分：精度和显存优化 ==========
+
+# 使用 BF16 半精度训练
+bf16: true
+
+# 梯度检查点：用时间换显存
+# GRPO 显存消耗很大，这个选项几乎是必须的
+gradient_checkpointing: true
+
+# Flash Attention 2 加速
+# Qwen3 支持 Flash Attention 2，可以显著加速注意力计算
+flash_attn: fa2
+
+# ========== 第七部分：日志和保存 ==========
+
+# 日志记录
+logging_steps: 10           # 每 10 步打印一次日志
+logging_first_step: true    # 第一步也打印日志（方便确认训练正常启动）
+
+# 模型保存
+save_strategy: steps        # 按步数保存
+save_steps: 200             # 每 200 步保存一次
+save_total_limit: 3         # 最多保留 3 个检查点
+
+# ========== 第八部分：其他配置 ==========
+
+# 随机种子（确保实验可复现）
+seed: 42
+
+# 报告工具：tensorboard（可视化训练曲线）
+report_to: tensorboard
+
+# 是否覆盖已有的输出目录
+overwrite_output_dir: true
+
+# 最大序列长度（输入 + 输出）
+cutoff_len: 2048

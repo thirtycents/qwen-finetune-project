@@ -1,0 +1,65 @@
+# ============================================================
+# .gitignore - Qwen3-0.6B Function Calling 项目
+# ============================================================
+# 说明：这个文件告诉 Git 哪些文件/目录不需要被版本控制跟踪。
+# 通常是：模型权重（太大）、数据文件、日志、临时文件等。
+# ============================================================
+
+# ---- Python 通用 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ---- 虚拟环境 ----
+venv/
+.venv/
+env/
+.env
+
+# ---- Jupyter Notebook ----
+.ipynb_checkpoints/
+
+# ---- IDE / 编辑器 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- 模型权重和检查点（太大，不应提交到 Git）----
+# LLaMA-Factory 训练输出
+outputs/
+saves/
+checkpoints/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.gguf
+
+# ---- 数据文件（从 HuggingFace 下载，不需要提交）----
+data/raw/
+data/processed/
+*.parquet
+*.arrow
+
+# ---- 日志和临时文件 ----
+logs/
+*.log
+wandb/
+runs/
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+
+# ---- Docker ----
+*.tar
+
+# ---- 压测结果（可选择提交或不提交）----
+# benchmark_results/

@@ -1,0 +1,173 @@
+# =====================================================================
+# Prometheus 配置文件 - vLLM 监控系统
+# =====================================================================
+# 本文件用于配置 Prometheus 监控服务，用于收集和存储 vLLM 服务的性能指标
+#
+# Prometheus 是什么？
+# Prometheus 是一个开源的指标监控和告警系统，主要特点：
+# 1. 时间序列数据库：存储带时间戳的指标数据（metric_name{label1="value1"} = 数值）
+# 2. 拉取模式：主动从目标服务拉取指标（vs 推送模式）
+# 3. PromQL：强大的查询语言，用于分析和告警
+# 4. 多维数据：每个指标可以有多个标签（labels），便于灵活查询
+#
+# Scraping（抓取）是什么？
+# Scraping 是 Prometheus 定期从目标服务拉取指标的过程：
+# 1. 按照 scrape_interval 的时间间隔（如15秒）定期发送HTTP请求
+# 2. 向目标服务的 metrics_path（如/metrics）端点请求指标数据
+# 3. 解析返回的文本格式数据（Prometheus exposition format）
+# 4. 存储到本地时间序列数据库
+#
+# vLLM 指标说明：
+# - vllm:time_to_first_token_seconds：首字令牌延迟（秒），衡量用户感知的响应时间
+# - vllm:num_requests_running：当前正在处理的请求数，反映服务负载
+# - vllm:gpu_cache_usage_perc：GPU 缓存使用率（百分比），关键的资源指标
+# - vllm:e2e_request_latency_seconds：端到端请求延迟，完整的请求处理时间
+# - vllm:generation_tokens_total：已生成的总令牌数，服务吞吐量指标
+# =====================================================================
+
+# 全局配置部分：定义所有 job 的默认行为
+global:
+  # scrape_interval：Prometheus 多长时间执行一次指标抓取
+  # 默认值：1分钟。这里设置为15秒以获得更高的监控精度
+  # 含义：每15秒从目标服务拉取一次指标数据
+  # 注意：间隔太小会增加网络和存储负担；太大会降低监控实时性
+  scrape_interval: 15s
+
+  # evaluation_interval：Prometheus 多长时间执行一次告警规则评估
+  # 默认值：1分钟。这里设置为15秒与抓取间隔保持一致
+  # 含义：每15秒检查一次告警条件是否满足
+  scrape_timeout: 10s
+
+  evaluation_interval: 15s
+
+  # 外部标签：添加到所有时间序列的标签，用于在联邦设置或多 Prometheus 实例中区分
+  # 例如：如果有多个 Prometheus 实例，可以用 cluster 标签区分
+  external_labels:
+    # monitor：此 Prometheus 实例的标识符
+    monitor: 'vllm-monitoring'
+    # environment：环境标识（开发、测试、生产等）
+    environment: 'production'
+
+# =====================================================================
+# 告警规则文件（可选）
+# rule_files:
+#   - "/etc/prometheus/rules.yml"
+# 说明：如果有告警规则文件，可在此指定路径。本配置中暂不启用
+# =====================================================================
+
+# Alerting 配置（可选）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+# 说明：如果需要集成告警管理器（如 AlertManager），在此配置目标
+# =====================================================================
+
+# 抓取配置部分：定义 Prometheus 要从哪些目标抓取指标以及如何抓取
+scrape_configs:
+
+  # =========================================================================
+  # 第一个抓取 job：vLLM 服务监控
+  # =========================================================================
+  - job_name: 'vllm'
+    # job_name：此 job 的唯一标识符
+    # 在 Prometheus UI 和告警规则中通过此名称引用此 job
+    # 所有来自此 job 的指标都会自动添加 job="vllm" 标签
+
+    # scrape_interval：这个 job 特定的抓取间隔
+    # 如果指定，则覆盖全局的 scrape_interval（此处未指定，使用全局默认15秒）
+
+    # scrape_timeout：单次抓取请求的超时时间
+    # 默认值：10秒。如果 vLLM 响应慢，可增加此值
+    # 必须小于 scrape_interval，否则会导致抓取失败
+
+    # metrics_path：vLLM 服务暴露指标的 HTTP 路径
+    # vLLM 在 /metrics 端点遵循 Prometheus exposition format（文本格式）
+    # Prometheus 会请求：http://vllm-server:8000/metrics
+    metrics_path: '/metrics'
+
+    # honor_labels：是否尊重目标返回的标签
+    # true：保留目标返回的标签（如果冲突，目标的标签优先）
+    # false：覆盖重复的标签
+    # 一般设置为 false（默认），避免配置冲突
+    honor_labels: false
+
+    # honor_timestamps：是否使用目标返回的时间戳
+    # true：使用目标返回的时间戳
+    # false：使用 Prometheus 抓取时的时间戳（更可靠）
+    # 建议设置为 false
+    honor_timestamps: true
+
+    # 静态配置：直接指定目标地址列表（vs 动态服务发现）
+    static_configs:
+      # targets：vLLM 服务的地址列表
+      # - 格式：[host:port, host:port, ...]
+      # - vllm-server：Docker Compose 网络中的服务名
+      # - 8000：vLLM 的默认指标端口（--served-model-name 和其他参数配置）
+      # - Prometheus 会自动构造完整 URL：http://vllm-server:8000/metrics
+      - targets: ['vllm-server:8000']
+        # labels：为这个目标添加自定义标签（可选）
+        # 这些标签会添加到所有来自此目标的指标上，便于查询和区分
+        labels:
+          # group：此目标的分组，便于在 Prometheus UI 中组织
+          group: 'llm-inference'
+          # service：服务名称，用于区分不同的服务
+          service: 'vllm'
+          # instance_type：实例类型，如 gpu、cpu 或特定的模型
+          instance_type: 'primary'
+
+  # =========================================================================
+  # 第二个抓取 job：Prometheus 自身监控
+  # =========================================================================
+  - job_name: 'prometheus'
+    # job_name：用于标识 Prometheus 自身监控任务
+    # 通过监控 Prometheus，可以获取其内部状态和性能指标，便于诊断问题
+    # 常见的 Prometheus 指标：
+    # - prometheus_tsdb_symbol_table_size_bytes：时间序列数据库的符号表大小
+    # - prometheus_rule_evaluation_duration_seconds：告警规则评估耗时
+    # - prometheus_sd_discovered_targets：服务发现发现的目标数
+
+    # metrics_path：Prometheus 暴露自身指标的路径（标准路径）
+    metrics_path: '/metrics'
+
+    # scrape_interval：使用全局默认值（15秒）
+    # 也可以为 Prometheus 自身设置更长的间隔，如60秒（不需要那么高的频率）
+
+    # 静态配置：Prometheus 通常在本地运行
+    static_configs:
+      # targets：Prometheus 自身的地址
+      # - localhost：Prometheus 容器内的本地回环地址
+      # - 9090：Prometheus 的标准 Web UI 和指标端口
+      # - 完整 URL：http://localhost:9090/metrics
+      - targets: ['localhost:9090']
+        # labels：为 Prometheus 自身指标添加标签
+        labels:
+          # group：分组，表示这是监控系统本身
+          group: 'monitoring'
+          # service：服务名称
+          service: 'prometheus'
+          # role：角色标识，用于特殊处理
+          role: 'monitoring-system'
+
+# =====================================================================
+# 补充说明：
+# =====================================================================
+# 1. 指标查询示例（在 Prometheus UI 中使用 PromQL）：
+#    - vllm:num_requests_running：查看当前运行的请求数
+#    - rate(vllm:generation_tokens_total[5m])：查看过去5分钟的令牌生成速率
+#    - histogram_quantile(0.95, vllm:time_to_first_token_seconds)：查看95%分位的首字延迟
+#
+# 2. 常见问题排查：
+#    - 如果 Prometheus UI 中显示 "DOWN" 状态，说明无法连接到目标
+#      原因可能：网络不通、服务未启动、端口错误、防火墙阻止
+#    - 使用 curl 手动测试：curl http://vllm-server:8000/metrics
+#
+# 3. Docker Compose 网络：
+#    - 在 docker-compose.yml 中，vllm-server 和 prometheus 在同一网络
+#    - 可以通过服务名（vllm-server）直接访问，无需 IP 地址
+#
+# 4. 性能考虑：
+#    - 更频繁的抓取（较小的 scrape_interval）→ 更好的精度，更多的存储和 CPU
+#    - 更少的标签 → 更快的查询和更少的存储
+#    - 可通过 relabel_configs 删除不需要的标签以优化性能
+# =====================================================================
