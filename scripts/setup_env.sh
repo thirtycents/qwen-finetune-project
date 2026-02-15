@@ -77,22 +77,17 @@ else
     echo "[✓] PyTorch 安装完成"
 fi
 
-# ---- Step 5: 安装项目依赖 ----
+# ---- Step 5: 安装 LLaMA-Factory（自动安装兼容的依赖）----
 echo ""
-echo "[*] 安装项目依赖..."
+echo "[*] 安装 LLaMA-Factory（会自动安装兼容的 transformers, peft, trl 等）..."
+pip install llamafactory
+echo "[✓] LLaMA-Factory 安装完成"
+
+# ---- Step 6: 安装其他依赖 ----
+echo ""
+echo "[*] 安装其他依赖..."
 pip install -r "${PROJECT_DIR}/requirements.txt"
 echo "[✓] 依赖安装完成"
-
-# ---- Step 6: 安装 LLaMA-Factory（从源码，获取最新功能）----
-echo ""
-echo "[*] 安装 LLaMA-Factory..."
-if python -c "import llamafactory" 2>/dev/null; then
-    echo "[✓] LLaMA-Factory 已安装"
-else
-    echo "    从 PyPI 安装..."
-    pip install llamafactory
-    echo "[✓] LLaMA-Factory 安装完成"
-fi
 
 # ---- Step 7: 验证安装 ----
 echo ""

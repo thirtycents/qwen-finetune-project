@@ -1,65 +1,34 @@
 # ============================================================
 # requirements.txt - 项目依赖列表
 # ============================================================
-# 说明：这个文件列出了项目运行所需的所有 Python 包。
 # 安装方式：pip install -r requirements.txt
 #
-# 注意：PyTorch 已经预装在你的电脑上，所以这里不包含 torch。
-# 如果你还没装 PyTorch，请先去 https://pytorch.org 安装。
+# 注意：先安装 LLaMA-Factory，它会自动安装兼容的依赖版本
 # ============================================================
 
-# ---- 训练框架 ----
-# LLaMA-Factory：统一的大模型微调框架，支持 LoRA、SFT、DPO 等方法
-# 原理：LLaMA-Factory 封装了 HuggingFace Transformers 的训练流程，
-#       让你只需写一个 YAML 配置文件就能完成模型微调。
-llamafactory>=0.9.0
-
-# ---- 基础依赖（LLaMA-Factory 会自动安装大部分，这里列出关键的）----
-# transformers：HuggingFace 的模型库，提供预训练模型的加载和使用
-transformers>=4.46.0
-# datasets：HuggingFace 的数据集加载库
-datasets>=2.16.0
-# peft：参数高效微调库，提供 LoRA 等方法
-# 原理：LoRA（Low-Rank Adaptation）只训练模型中很小一部分参数（低秩矩阵），
-#       大幅减少显存占用和训练时间，效果接近全参数微调。
-peft>=0.13.0
-# accelerate：分布式训练加速库
-accelerate>=0.34.0
-# trl：用于强化学习对齐训练（GRPO/DPO/PPO）
-# 原理：TRL 提供了 RLHF（人类反馈强化学习）的训练工具，
-#       GRPO 是其中一种不需要人工偏好数据的对齐方法。
-trl>=0.12.0
+# ---- 训练框架（核心）----
+# LLaMA-Factory 会自动安装兼容版本的 transformers, peft, trl 等
+llamafactory
 
 # ---- 推理服务 ----
-# vLLM：高性能大模型推理引擎
-# 原理：vLLM 使用 PagedAttention 技术管理 GPU 显存中的 KV Cache，
-#       类似操作系统的虚拟内存分页，大幅提升推理吞吐量。
+# vLLM：高性能大模型推理引擎（PagedAttention）
 vllm>=0.6.0
 
 # ---- 数据处理 ----
-# pandas：数据分析和处理库
 pandas>=2.0.0
-# tqdm：进度条显示库
 tqdm>=4.66.0
 
 # ---- 评测 ----
-# scikit-learn：机器学习工具库，用于计算 F1 等指标
 scikit-learn>=1.3.0
 
 # ---- 可视化 ----
-# matplotlib：绘图库，用于绘制训练曲线和压测结果
 matplotlib>=3.7.0
-# seaborn：基于 matplotlib 的高级可视化库
 seaborn>=0.12.0
 
-# ---- 格式化和代码质量 ----
+# ---- 代码质量 ----
 ruff>=0.4.0
 pytest>=8.0.0
 
-# ---- API 客户端（用于压测 vLLM 的 OpenAI 兼容接口）----
+# ---- API 客户端 ----
 openai>=1.0.0
 aiohttp>=3.9.0
-
-# ---- 模型量化和导出（可选，用于端侧部署）----
-# 如需 GGUF 转换，需要安装 llama-cpp-python
-# pip install llama-cpp-python
